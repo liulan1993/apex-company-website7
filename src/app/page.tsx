@@ -23,6 +23,13 @@ const EditIcon = (props: React.SVGProps<SVGSVGElement>) => (
         <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
     </svg>
 );
+const XCircleIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="15" y1="9" x2="9" y2="15" />
+        <line x1="9" y1="9" x2="15" y2="15" />
+    </svg>
+);
 
 
 // --- Markdown 实时预览组件 ---
@@ -48,7 +55,7 @@ function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imageP
     }, [content]);
     
     return (
-        <div className="prose prose-lg max-w-none p-4 h-full text-left">
+        <div className="prose prose-lg prose-slate max-w-none p-4 h-full text-left">
              {imagePreviewUrl && (
                 <img src={imagePreviewUrl} alt="图片预览" className="max-w-full rounded-lg mb-4 shadow-md" />
             )}
@@ -65,7 +72,18 @@ function SubmissionForm() {
     const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
     const [message, setMessage] = useState('');
+    const [userId, setUserId] = useState<string | null>(null);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    // 在组件加载时获取或创建用户UUID
+    useEffect(() => {
+        let currentUserId = localStorage.getItem('apex_user_id');
+        if (!currentUserId) {
+            currentUserId = crypto.randomUUID();
+            localStorage.setItem('apex_user_id', currentUserId);
+        }
+        setUserId(currentUserId);
+    }, []);
 
     const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -76,6 +94,14 @@ function SubmissionForm() {
                 setImagePreviewUrl(reader.result as string);
             };
             reader.readAsDataURL(file);
+        }
+    };
+
+    const handleRemoveImage = () => {
+        setImageFile(null);
+        setImagePreviewUrl(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
         }
     };
 
@@ -108,7 +134,7 @@ function SubmissionForm() {
             const response = await fetch('/api/submit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content, imageBase64 }),
+                body: JSON.stringify({ content, imageBase64, userId }),
             });
 
             const result = await response.json();
@@ -120,8 +146,7 @@ function SubmissionForm() {
             setStatus('success');
             setMessage('提交成功！感谢您的稿件。');
             setContent('');
-            setImageFile(null);
-            setImagePreviewUrl(null);
+            handleRemoveImage();
 
         } catch (error) {
             setStatus('error');
@@ -152,16 +177,25 @@ function SubmissionForm() {
                             value={content}
                             onChange={(e) => setContent(e.target.value)}
                             placeholder="请在此输入内容，支持Markdown语法..."
-                            className="w-full flex-grow p-3 border-gray-200 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                            className="w-full flex-grow p-3 border-gray-200 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-800 placeholder:text-slate-400"
                         />
-                        <button 
-                            type="button" 
-                            onClick={() => fileInputRef.current?.click()}
-                            className="mt-3 flex items-center justify-center gap-2 w-full bg-gray-100 hover:bg-gray-200 text-slate-700 font-semibold py-2 px-4 rounded-lg transition-colors"
-                        >
-                            <UploadIcon className="w-5 h-5"/>
-                            {imageFile ? `已选择图片: ${imageFile.name}` : '上传图片'}
-                        </button>
+                        {imageFile ? (
+                             <div className="mt-3 flex items-center justify-between gap-2 w-full bg-gray-100 text-slate-700 font-semibold py-2 px-4 rounded-lg">
+                                <span className="truncate flex-1 text-left">{imageFile.name}</span>
+                                <button onClick={handleRemoveImage} className="text-red-500 hover:text-red-700 p-1 rounded-full transition-colors">
+                                    <XCircleIcon className="w-5 h-5"/>
+                                </button>
+                            </div>
+                        ) : (
+                            <button 
+                                type="button" 
+                                onClick={() => fileInputRef.current?.click()}
+                                className="mt-3 flex items-center justify-center gap-2 w-full bg-gray-100 hover:bg-gray-200 text-slate-700 font-semibold py-2 px-4 rounded-lg transition-colors"
+                            >
+                                <UploadIcon className="w-5 h-5"/>
+                                上传图片
+                            </button>
+                        )}
                          <input
                             ref={fileInputRef}
                             type="file"
