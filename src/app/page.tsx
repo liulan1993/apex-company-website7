@@ -95,7 +95,6 @@ function SubmissionForm() {
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     
     const charLimit = 2000;
-    // 修复：将文件大小限制调整为3MB，以避免Base64编码后超出Vercel服务器上限（约4.5MB）
     const singleFileLimit = 3 * 1024 * 1024; 
 
     useEffect(() => {
@@ -185,12 +184,11 @@ function SubmissionForm() {
                 body: JSON.stringify({ content, fileData, userId }),
             });
             
-            // 修复：更稳健的错误处理，应对非JSON格式的服务器错误响应
             if (!response.ok) {
                  try {
                     const errorResult = await response.json();
                     throw new Error(errorResult.message || '提交失败');
-                 } catch (e) {
+                 } catch {
                      throw new Error('文件过大或服务器错误，请稍后再试。');
                  }
             }
