@@ -37,12 +37,12 @@ function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imageP
             script.src = "https://cdn.jsdelivr.net/npm/marked/marked.min.js";
             script.async = true;
             script.onload = () => {
-                // @ts-expect-error
+                // @ts-expect-error: 'marked' is loaded dynamically via a script tag, so TypeScript cannot know about it at compile time.
                 if (window.marked) { setHtml(window.marked.parse(content)); }
             };
             document.body.appendChild(script);
         } else {
-            // @ts-expect-error
+            // @ts-expect-error: 'marked' is loaded dynamically via a script tag, so TypeScript cannot know about it at compile time.
             if (window.marked) { setHtml(window.marked.parse(content)); }
         }
     }, [content]);
