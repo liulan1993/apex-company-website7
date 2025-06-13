@@ -3,16 +3,22 @@
 import { kv } from '@vercel/kv';
 import { NextResponse } from 'next/server';
 
+interface FileData {
+    name: string;
+    type: string;
+    content: string; // Base64 encoded content
+}
+
 // 定义我们期望从前端接收的数据类型
 interface SubmissionPayload {
     content: string;
-    imageBase64: string | null;
-    userId: string; // 新增 userId
+    fileData: FileData | null;
+    userId: string;
 }
 
 export async function POST(request: Request) {
     try {
-        const { content, imageBase64, userId } = (await request.json()) as SubmissionPayload;
+        const { content, fileData, userId } = (await request.json()) as SubmissionPayload;
 
         if (!content) {
             return NextResponse.json({ message: '错误：内容不能为空。' }, { status: 400 });
@@ -27,9 +33,9 @@ export async function POST(request: Request) {
 
         const dataToStore = {
             id: submissionId,
-            userId, // 存储用户ID
+            userId,
             content,
-            imageBase64,
+            file: fileData, // 存储整个文件对象
             createdAt: timestamp,
         };
 

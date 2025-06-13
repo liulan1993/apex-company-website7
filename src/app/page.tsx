@@ -30,6 +30,23 @@ const XCircleIcon = (props: React.SVGProps<SVGSVGElement>) => (
         <line x1="9" y1="9" x2="15" y2="15" />
     </svg>
 );
+const FileTextIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+        <polyline points="14 2 14 8 20 8" />
+        <line x1="16" y1="13" x2="8" y2="13" />
+        <line x1="16" y1="17" x2="8" y2="17" />
+        <line x1="10" y1="9" x2="8" y2="9" />
+    </svg>
+);
+const FileImageIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+        <polyline points="14 2 14 8 20 8" />
+        <circle cx="10" cy="14" r="2" />
+        <path d="m20 17-1.09-1.09a2 2 0 0 0-2.82 0L10 22" />
+    </svg>
+);
 
 
 // --- Markdown 实时预览组件 ---
@@ -55,7 +72,6 @@ function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imageP
     }, [content]);
     
     return (
-        // 修复：通过外层div强制设定文字颜色为深灰色，确保预览清晰
         <div className="p-4 h-full text-left text-slate-800">
             <div className="prose prose-lg max-w-none">
                  {imagePreviewUrl && (
@@ -71,14 +87,15 @@ function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imageP
 // --- 投稿表单组件 ---
 function SubmissionForm() {
     const [content, setContent] = useState('');
-    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [file, setFile] = useState<File | null>(null);
     const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
     const [message, setMessage] = useState('');
     const [userId, setUserId] = useState<string | null>(null);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
+    
+    const charLimit = 2000;
 
-    // 在组件加载时获取或创建用户UUID
     useEffect(() => {
         let currentUserId = localStorage.getItem('apex_user_id');
         if (!currentUserId) {
@@ -88,20 +105,38 @@ function SubmissionForm() {
         setUserId(currentUserId);
     }, []);
 
-    const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (file) {
-            setImageFile(file);
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                setImagePreviewUrl(reader.result as string);
-            };
-            reader.readAsDataURL(file);
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const selectedFile = event.target.files?.[0];
+        if (selectedFile) {
+            const singleFileLimit = 5 * 1024 * 1024; // 5MB
+
+            if (selectedFile.size > singleFileLimit) {
+                setMessage('单个文件大小不能超过 5MB。');
+                setStatus('error');
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = "";
+                }
+                return;
+            }
+            
+            setMessage('');
+            setStatus('idle');
+            setFile(selectedFile);
+            
+            if (selectedFile.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    setImagePreviewUrl(reader.result as string);
+                };
+                reader.readAsDataURL(selectedFile);
+            } else {
+                setImagePreviewUrl(null);
+            }
         }
     };
 
-    const handleRemoveImage = () => {
-        setImageFile(null);
+    const handleRemoveFile = () => {
+        setFile(null);
         setImagePreviewUrl(null);
         if (fileInputRef.current) {
             fileInputRef.current.value = "";
@@ -112,7 +147,7 @@ function SubmissionForm() {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
-            reader.onload = () => resolve(reader.result as string);
+            reader.onload = () => resolve((reader.result as string).split(',')[1]);
             reader.onerror = error => reject(error);
         });
     };
@@ -124,20 +159,30 @@ function SubmissionForm() {
             setStatus('error');
             return;
         }
+        if (content.length > charLimit) {
+            setMessage(`内容不能超过 ${charLimit} 字。`);
+            setStatus('error');
+            return;
+        }
 
         setStatus('loading');
         setMessage('');
 
-        let imageBase64 = null;
-        if (imageFile) {
-            imageBase64 = await fileToBase64(imageFile);
+        let fileData = null;
+        if (file) {
+            const fileBase64 = await fileToBase64(file);
+            fileData = {
+                name: file.name,
+                type: file.type,
+                content: fileBase64,
+            };
         }
         
         try {
             const response = await fetch('/api/submit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content, imageBase64, userId }),
+                body: JSON.stringify({ content, fileData, userId }),
             });
 
             const result = await response.json();
@@ -149,13 +194,25 @@ function SubmissionForm() {
             setStatus('success');
             setMessage('提交成功！感谢您的稿件。');
             setContent('');
-            handleRemoveImage();
+            handleRemoveFile();
 
         } catch (error) {
             setStatus('error');
             setMessage(error instanceof Error ? error.message : '发生未知错误');
         }
     };
+    
+    const getFileIcon = (fileType: string) => {
+        if (fileType.startsWith('image/')) return <FileImageIcon className="w-5 h-5 text-blue-500" />;
+        if (fileType.includes('pdf')) return <FileTextIcon className="w-5 h-5 text-red-500" />;
+        if (fileType.includes('word')) return <FileTextIcon className="w-5 h-5 text-blue-700" />;
+        if (fileType.includes('excel') || fileType.includes('spreadsheet')) return <FileTextIcon className="w-5 h-5 text-green-700" />;
+        if (fileType.includes('powerpoint') || fileType.includes('presentation')) return <FileTextIcon className="w-5 h-5 text-orange-500" />;
+        return <FileTextIcon className="w-5 h-5 text-gray-500" />;
+    };
+
+    const allowedFileTypes = "image/*,.txt,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx";
+    const charCountColor = content.length > charLimit ? 'text-red-500' : 'text-slate-500';
 
     return (
         <motion.div
@@ -172,20 +229,27 @@ function SubmissionForm() {
                 <div className="grid grid-cols-1 md:grid-cols-2 min-h-[500px]">
                     {/* 编辑区 */}
                     <div className="flex flex-col p-4">
-                        <div className="flex items-center gap-2 mb-2 text-slate-600">
-                           <EditIcon className="w-5 h-5" />
-                           <span className="font-semibold">编辑区</span>
+                        <div className="flex items-center justify-between gap-2 mb-2 text-slate-600">
+                           <div className="flex items-center gap-2">
+                                <EditIcon className="w-5 h-5" />
+                                <span className="font-semibold">编辑区</span>
+                           </div>
+                           <div className={`text-sm font-medium ${charCountColor}`}>
+                               {content.length} / {charLimit}
+                           </div>
                         </div>
                         <textarea
                             value={content}
                             onChange={(e) => setContent(e.target.value)}
+                            maxLength={charLimit}
                             placeholder="请在此输入内容，支持Markdown语法..."
                             className="w-full flex-grow p-3 border-gray-200 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-900 placeholder:text-slate-400"
                         />
-                        {imageFile ? (
+                        {file ? (
                              <div className="mt-3 flex items-center justify-between gap-2 w-full bg-gray-100 text-slate-700 font-semibold py-2 px-4 rounded-lg">
-                                <span className="truncate flex-1 text-left">{imageFile.name}</span>
-                                <button onClick={handleRemoveImage} className="text-red-500 hover:text-red-700 p-1 rounded-full transition-colors">
+                                {getFileIcon(file.type)}
+                                <span className="truncate flex-1 text-left ml-2">{file.name}</span>
+                                <button onClick={handleRemoveFile} className="text-red-500 hover:text-red-700 p-1 rounded-full transition-colors">
                                     <XCircleIcon className="w-5 h-5"/>
                                 </button>
                             </div>
@@ -196,14 +260,14 @@ function SubmissionForm() {
                                 className="mt-3 flex items-center justify-center gap-2 w-full bg-gray-100 hover:bg-gray-200 text-slate-700 font-semibold py-2 px-4 rounded-lg transition-colors"
                             >
                                 <UploadIcon className="w-5 h-5"/>
-                                上传图片
+                                上传文件 (最大5MB)
                             </button>
                         )}
                          <input
                             ref={fileInputRef}
                             type="file"
-                            accept="image/*"
-                            onChange={handleImageChange}
+                            accept={allowedFileTypes}
+                            onChange={handleFileChange}
                             className="hidden"
                         />
                     </div>
