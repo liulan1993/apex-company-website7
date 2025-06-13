@@ -55,7 +55,8 @@ function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imageP
     }, [content]);
     
     return (
-        <div className="prose prose-lg prose-slate max-w-none p-4 h-full text-left">
+        // 修复：强制设置预览区所有文本元素的颜色为深色
+        <div className="prose prose-lg max-w-none p-4 h-full text-left prose-headings:text-slate-900 prose-p:text-slate-800 prose-strong:text-slate-900 prose-li:text-slate-800">
              {imagePreviewUrl && (
                 <img src={imagePreviewUrl} alt="图片预览" className="max-w-full rounded-lg mb-4 shadow-md" />
             )}
@@ -177,7 +178,7 @@ function SubmissionForm() {
                             value={content}
                             onChange={(e) => setContent(e.target.value)}
                             placeholder="请在此输入内容，支持Markdown语法..."
-                            className="w-full flex-grow p-3 border-gray-200 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-800 placeholder:text-slate-400"
+                            className="w-full flex-grow p-3 border-gray-200 border rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none text-slate-900 placeholder:text-slate-400"
                         />
                         {imageFile ? (
                              <div className="mt-3 flex items-center justify-between gap-2 w-full bg-gray-100 text-slate-700 font-semibold py-2 px-4 rounded-lg">
