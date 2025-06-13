@@ -55,12 +55,14 @@ function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imageP
     }, [content]);
     
     return (
-        // 修复：强制设置预览区所有文本元素的颜色为深色
-        <div className="prose prose-lg max-w-none p-4 h-full text-left prose-headings:text-slate-900 prose-p:text-slate-800 prose-strong:text-slate-900 prose-li:text-slate-800">
-             {imagePreviewUrl && (
-                <img src={imagePreviewUrl} alt="图片预览" className="max-w-full rounded-lg mb-4 shadow-md" />
-            )}
-            <div dangerouslySetInnerHTML={{ __html: html }} />
+        // 修复：通过外层div强制设定文字颜色为深灰色，确保预览清晰
+        <div className="p-4 h-full text-left text-slate-800">
+            <div className="prose prose-lg max-w-none">
+                 {imagePreviewUrl && (
+                    <img src={imagePreviewUrl} alt="图片预览" className="max-w-full rounded-lg mb-4 shadow-md" />
+                )}
+                <div dangerouslySetInnerHTML={{ __html: html }} />
+            </div>
         </div>
     );
 }
