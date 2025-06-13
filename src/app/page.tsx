@@ -95,6 +95,8 @@ function SubmissionForm() {
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     
     const charLimit = 2000;
+    // 修复：将文件大小限制调整为3MB，以避免Base64编码后超出Vercel服务器上限（约4.5MB）
+    const singleFileLimit = 3 * 1024 * 1024; 
 
     useEffect(() => {
         let currentUserId = localStorage.getItem('apex_user_id');
@@ -108,10 +110,8 @@ function SubmissionForm() {
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const selectedFile = event.target.files?.[0];
         if (selectedFile) {
-            const singleFileLimit = 5 * 1024 * 1024; // 5MB
-
             if (selectedFile.size > singleFileLimit) {
-                setMessage('单个文件大小不能超过 5MB。');
+                setMessage('单个文件大小不能超过 3MB。');
                 setStatus('error');
                 if (fileInputRef.current) {
                     fileInputRef.current.value = "";
@@ -184,15 +184,21 @@ function SubmissionForm() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content, fileData, userId }),
             });
+            
+            // 修复：更稳健的错误处理，应对非JSON格式的服务器错误响应
+            if (!response.ok) {
+                 try {
+                    const errorResult = await response.json();
+                    throw new Error(errorResult.message || '提交失败');
+                 } catch (e) {
+                     throw new Error('文件过大或服务器错误，请稍后再试。');
+                 }
+            }
 
             const result = await response.json();
-
-            if (!response.ok) {
-                throw new Error(result.message || '提交失败');
-            }
             
             setStatus('success');
-            setMessage('提交成功！感谢您的稿件。');
+            setMessage(result.message || '提交成功！感谢您的稿件。');
             setContent('');
             handleRemoveFile();
 
@@ -260,7 +266,7 @@ function SubmissionForm() {
                                 className="mt-3 flex items-center justify-center gap-2 w-full bg-gray-100 hover:bg-gray-200 text-slate-700 font-semibold py-2 px-4 rounded-lg transition-colors"
                             >
                                 <UploadIcon className="w-5 h-5"/>
-                                上传文件 (最大5MB)
+                                上传文件 (最大3MB)
                             </button>
                         )}
                          <input
