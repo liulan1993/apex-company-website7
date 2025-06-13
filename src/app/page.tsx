@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
 // --- 图标组件 ---
@@ -37,12 +37,12 @@ function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imageP
             script.src = "https://cdn.jsdelivr.net/npm/marked/marked.min.js";
             script.async = true;
             script.onload = () => {
-                // @ts-ignore
+                // @ts-expect-error
                 if (window.marked) { setHtml(window.marked.parse(content)); }
             };
             document.body.appendChild(script);
         } else {
-            // @ts-ignore
+            // @ts-expect-error
             if (window.marked) { setHtml(window.marked.parse(content)); }
         }
     }, [content]);
@@ -295,4 +295,3 @@ function ApexHero({ title = "Apex" }: { title?: string }) {
 export default function Page() {
     return <ApexHero title="Apex" />;
 }
-
