@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import Image from 'next/image';
 import { motion } from 'framer-motion';
 
 // --- 图标组件 (保持不变) ---
@@ -50,7 +49,7 @@ const FileImageIcon = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 
-// --- Markdown 实时预览组件 (已修复) ---
+// --- Markdown 实时预览组件 ---
 function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imagePreviewUrl: string | null }) {
     const [html, setHtml] = useState('');
 
@@ -76,21 +75,14 @@ function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imageP
         <div className="p-4 h-full text-left text-slate-800">
             <div className="prose prose-lg max-w-none">
                  {imagePreviewUrl && (
-                    <div className="relative w-full h-64 mb-4">
-                        <Image
-                            src={imagePreviewUrl}
-                            alt="图片预览"
-                            fill
-                            style={{ objectFit: 'contain' }}
-                            className="rounded-lg shadow-md"
-                        />
-                    </div>
+                    <img src={imagePreviewUrl} alt="图片预览" className="max-w-full rounded-lg mb-4 shadow-md" />
                 )}
                 <div dangerouslySetInnerHTML={{ __html: html }} />
             </div>
         </div>
     );
 }
+
 
 // --- 投稿表单组件 (已修改) ---
 function SubmissionForm() {
@@ -166,34 +158,34 @@ function SubmissionForm() {
         setStatus('loading');
         setMessage('准备上传...');
 
-        let blobUrl = null;
+        let fileUrl = null;
 
         try {
             // 步骤 1: 如果有文件，先上传到 Vercel Blob
             if (file) {
                 setMessage('正在上传文件...');
-                const response = await fetch(`/api/upload?filename=${encodeURIComponent(file.name)}`, {
+                const uploadResponse = await fetch(`/api/upload?filename=${encodeURIComponent(file.name)}`, {
                     method: 'POST',
                     body: file,
                 });
 
-                if (!response.ok) {
-                    const errorResult = await response.json();
+                if (!uploadResponse.ok) {
+                    const errorResult = await uploadResponse.json();
                     throw new Error(errorResult.error || '文件上传失败');
                 }
 
-                const newBlob = await response.json();
-                blobUrl = newBlob.url;
+                const newBlob = await uploadResponse.json();
+                fileUrl = newBlob.url; // 获取返回的 URL
                 setMessage('文件上传成功，正在提交内容...');
             } else {
                  setMessage('正在提交内容...');
             }
 
-            // 步骤 2: 将文本内容和文件URL提交到服务器
+            // 步骤 2: 将文本内容和文件URL(如果有)提交到服务器
             const submissionResponse = await fetch('/api/submit', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content, fileUrl: blobUrl, userId }),
+                body: JSON.stringify({ content, fileUrl, userId }), // 发送 content 和 fileUrl
             });
 
             if (!submissionResponse.ok) {
@@ -293,7 +285,7 @@ function SubmissionForm() {
                             status === 'success' ? 'text-green-600' : 
                             status === 'error' ? 'text-red-600' : 'text-slate-600'
                         }`}>
-                            {message}
+                            {message || (status === 'loading' && '正在提交...')}
                         </p>
                     )}
                     <div className="flex-grow"></div>
@@ -309,6 +301,7 @@ function SubmissionForm() {
         </motion.div>
     );
 }
+
 
 // --- 核心背景动画组件 (保持不变) ---
 function FloatingPaths({ position }: { position: number }) {
@@ -391,6 +384,7 @@ function ApexHero({ title = "Apex" }: { title?: string }) {
                             </span>
                         ))}
                     </h1>
+                    {/* 在此添加投稿表单组件 */}
                     <SubmissionForm />
                 </motion.div>
             </div>
@@ -398,70 +392,7 @@ function ApexHero({ title = "Apex" }: { title?: string }) {
     );
 }
 
-// --- 页面主入口 (保持不变) ---
+// --- 页面主入口 (符合 Next.js App Router 规范) ---
 export default function Page() {
     return <ApexHero title="Apex" />;
-}
-
-
-/*
- * ----------------------------------------------------------------
- * 文件 2: Blob 上传 API - app/api/upload/route.ts (保持不变)
- * ----------------------------------------------------------------
- */
-import { put } from '@vercel/blob';
-import { NextResponse } from 'next/server';
-
-export async function POST(request: Request): Promise<NextResponse> {
-  const { searchParams } = new URL(request.url);
-  const filename = searchParams.get('filename');
-
-  if (!filename || !request.body) {
-    return NextResponse.json({ error: 'No filename or file body provided.' }, { status: 400 });
-  }
-
-  const blob = await put(filename, request.body, {
-    access: 'public',
-  });
-
-  return NextResponse.json(blob);
-}
-
-
-/*
- * ----------------------------------------------------------------
- * 文件 3: 内容提交 API - app/api/submit/route.ts (保持不变)
- * ----------------------------------------------------------------
- */
-import { kv } from '@vercel/kv';
-// import { NextResponse } from 'next/server'; // This is already imported above
-
-export async function POST(request: Request): Promise<NextResponse> {
-    try {
-        const { content, fileUrl, userId } = await request.json();
-
-        if (!userId) {
-            return NextResponse.json({ message: '用户ID是必需的' }, { status: 400 });
-        }
-        if (!content && !fileUrl) {
-            return NextResponse.json({ message: '内容和文件不能都为空' }, { status: 400 });
-        }
-        
-        const submissionId = `submission:${userId}:${Date.now()}`;
-        
-        const submissionData = {
-            content,
-            fileUrl,
-            userId,
-            createdAt: new Date().toISOString(),
-        };
-
-        await kv.set(submissionId, JSON.stringify(submissionData));
-
-        return NextResponse.json({ message: '稿件提交成功！' }, { status: 200 });
-
-    } catch (error) {
-        console.error('提交失败:', error);
-        return NextResponse.json({ message: '服务器内部错误' }, { status: 500 });
-    }
 }
