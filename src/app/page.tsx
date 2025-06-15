@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import { motion } from 'framer-motion';
 
 // --- 图标组件 (保持不变) ---
@@ -49,7 +50,7 @@ const FileImageIcon = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 
-// --- Markdown 实时预览组件 (保持不变) ---
+// --- Markdown 实时预览组件 (已修复) ---
 function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imagePreviewUrl: string | null }) {
     const [html, setHtml] = useState('');
 
@@ -61,12 +62,12 @@ function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imageP
             script.src = "https://cdn.jsdelivr.net/npm/marked/marked.min.js";
             script.async = true;
             script.onload = () => {
-                // @ts-ignore
+                // @ts-expect-error: 'marked' is loaded dynamically, TypeScript can't know about it.
                 if (window.marked) { setHtml(window.marked.parse(content)); }
             };
             document.body.appendChild(script);
         } else {
-            // @ts-ignore
+            // @ts-expect-error: 'marked' is loaded dynamically, TypeScript can't know about it.
             if (window.marked) { setHtml(window.marked.parse(content)); }
         }
     }, [content]);
@@ -75,7 +76,15 @@ function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imageP
         <div className="p-4 h-full text-left text-slate-800">
             <div className="prose prose-lg max-w-none">
                  {imagePreviewUrl && (
-                    <img src={imagePreviewUrl} alt="图片预览" className="max-w-full rounded-lg mb-4 shadow-md" />
+                    <div className="relative w-full h-64 mb-4">
+                        <Image
+                            src={imagePreviewUrl}
+                            alt="图片预览"
+                            fill
+                            style={{ objectFit: 'contain' }}
+                            className="rounded-lg shadow-md"
+                        />
+                    </div>
                 )}
                 <div dangerouslySetInnerHTML={{ __html: html }} />
             </div>
@@ -93,7 +102,6 @@ function SubmissionForm() {
     const [userId, setUserId] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     
-    // ** 修改点: 字符和文件大小限制 **
     const charLimit = 2000;
     const singleFileLimit = 10 * 1024 * 1024; // 10MB
 
@@ -109,7 +117,6 @@ function SubmissionForm() {
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const selectedFile = event.target.files?.[0];
         if (selectedFile) {
-            // ** 修改点: 更新文件大小检查和提示信息 **
             if (selectedFile.size > singleFileLimit) {
                 setMessage('单个文件大小不能超过 10MB。');
                 setStatus('error');
@@ -143,7 +150,6 @@ function SubmissionForm() {
         }
     };
 
-    // ** 修改点: 重写 handleSubmit 逻辑 **
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
         if (!content.trim() && !file) {
@@ -261,7 +267,6 @@ function SubmissionForm() {
                                 className="mt-3 flex items-center justify-center gap-2 w-full bg-gray-100 hover:bg-gray-200 text-slate-700 font-semibold py-2 px-4 rounded-lg transition-colors"
                             >
                                 <UploadIcon className="w-5 h-5"/>
-                                {/* ** 修改点: 更新按钮文本 ** */}
                                 上传文件 (最大10MB)
                             </button>
                         )}
@@ -398,3 +403,65 @@ export default function Page() {
     return <ApexHero title="Apex" />;
 }
 
+
+/*
+ * ----------------------------------------------------------------
+ * 文件 2: Blob 上传 API - app/api/upload/route.ts (保持不变)
+ * ----------------------------------------------------------------
+ */
+import { put } from '@vercel/blob';
+import { NextResponse } from 'next/server';
+
+export async function POST(request: Request): Promise<NextResponse> {
+  const { searchParams } = new URL(request.url);
+  const filename = searchParams.get('filename');
+
+  if (!filename || !request.body) {
+    return NextResponse.json({ error: 'No filename or file body provided.' }, { status: 400 });
+  }
+
+  const blob = await put(filename, request.body, {
+    access: 'public',
+  });
+
+  return NextResponse.json(blob);
+}
+
+
+/*
+ * ----------------------------------------------------------------
+ * 文件 3: 内容提交 API - app/api/submit/route.ts (保持不变)
+ * ----------------------------------------------------------------
+ */
+import { kv } from '@vercel/kv';
+// import { NextResponse } from 'next/server'; // This is already imported above
+
+export async function POST(request: Request): Promise<NextResponse> {
+    try {
+        const { content, fileUrl, userId } = await request.json();
+
+        if (!userId) {
+            return NextResponse.json({ message: '用户ID是必需的' }, { status: 400 });
+        }
+        if (!content && !fileUrl) {
+            return NextResponse.json({ message: '内容和文件不能都为空' }, { status: 400 });
+        }
+        
+        const submissionId = `submission:${userId}:${Date.now()}`;
+        
+        const submissionData = {
+            content,
+            fileUrl,
+            userId,
+            createdAt: new Date().toISOString(),
+        };
+
+        await kv.set(submissionId, JSON.stringify(submissionData));
+
+        return NextResponse.json({ message: '稿件提交成功！' }, { status: 200 });
+
+    } catch (error) {
+        console.error('提交失败:', error);
+        return NextResponse.json({ message: '服务器内部错误' }, { status: 500 });
+    }
+}
