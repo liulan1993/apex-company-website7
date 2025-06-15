@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 
-// --- 图标组件 ---
+// --- 图标组件 (保持不变) ---
 const UploadIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -49,7 +49,7 @@ const FileImageIcon = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 
-// --- Markdown 实时预览组件 ---
+// --- Markdown 实时预览组件 (保持不变) ---
 function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imagePreviewUrl: string | null }) {
     const [html, setHtml] = useState('');
 
@@ -61,12 +61,12 @@ function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imageP
             script.src = "https://cdn.jsdelivr.net/npm/marked/marked.min.js";
             script.async = true;
             script.onload = () => {
-                // @ts-expect-error: 'marked' is loaded dynamically via a script tag, so TypeScript cannot know about it at compile time.
+                // @ts-ignore
                 if (window.marked) { setHtml(window.marked.parse(content)); }
             };
             document.body.appendChild(script);
         } else {
-            // @ts-expect-error: 'marked' is loaded dynamically via a script tag, so TypeScript cannot know about it at compile time.
+            // @ts-ignore
             if (window.marked) { setHtml(window.marked.parse(content)); }
         }
     }, [content]);
@@ -83,8 +83,7 @@ function MarkdownPreview({ content, imagePreviewUrl }: { content: string, imageP
     );
 }
 
-
-// --- 投稿表单组件 ---
+// --- 投稿表单组件 (已修改) ---
 function SubmissionForm() {
     const [content, setContent] = useState('');
     const [file, setFile] = useState<File | null>(null);
@@ -92,10 +91,11 @@ function SubmissionForm() {
     const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
     const [message, setMessage] = useState('');
     const [userId, setUserId] = useState<string | null>(null);
-    const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     
+    // ** 修改点: 字符和文件大小限制 **
     const charLimit = 2000;
-    const singleFileLimit = 3 * 1024 * 1024; 
+    const singleFileLimit = 10 * 1024 * 1024; // 10MB
 
     useEffect(() => {
         let currentUserId = localStorage.getItem('apex_user_id');
@@ -109,8 +109,9 @@ function SubmissionForm() {
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const selectedFile = event.target.files?.[0];
         if (selectedFile) {
+            // ** 修改点: 更新文件大小检查和提示信息 **
             if (selectedFile.size > singleFileLimit) {
-                setMessage('单个文件大小不能超过 3MB。');
+                setMessage('单个文件大小不能超过 10MB。');
                 setStatus('error');
                 if (fileInputRef.current) {
                     fileInputRef.current.value = "";
@@ -142,19 +143,11 @@ function SubmissionForm() {
         }
     };
 
-    const fileToBase64 = (file: File): Promise<string> => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => resolve((reader.result as string).split(',')[1]);
-            reader.onerror = error => reject(error);
-        });
-    };
-
+    // ** 修改点: 重写 handleSubmit 逻辑 **
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
-        if (!content.trim()) {
-            setMessage('内容不能为空哦！');
+        if (!content.trim() && !file) {
+            setMessage('内容和文件不能都为空！');
             setStatus('error');
             return;
         }
@@ -165,36 +158,44 @@ function SubmissionForm() {
         }
 
         setStatus('loading');
-        setMessage('');
+        setMessage('准备上传...');
 
-        let fileData = null;
-        if (file) {
-            const fileBase64 = await fileToBase64(file);
-            fileData = {
-                name: file.name,
-                type: file.type,
-                content: fileBase64,
-            };
-        }
-        
+        let blobUrl = null;
+
         try {
-            const response = await fetch('/api/submit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content, fileData, userId }),
-            });
-            
-            if (!response.ok) {
-                 try {
+            // 步骤 1: 如果有文件，先上传到 Vercel Blob
+            if (file) {
+                setMessage('正在上传文件...');
+                const response = await fetch(`/api/upload?filename=${encodeURIComponent(file.name)}`, {
+                    method: 'POST',
+                    body: file,
+                });
+
+                if (!response.ok) {
                     const errorResult = await response.json();
-                    throw new Error(errorResult.message || '提交失败');
-                 } catch {
-                     throw new Error('文件过大或服务器错误，请稍后再试。');
-                 }
+                    throw new Error(errorResult.error || '文件上传失败');
+                }
+
+                const newBlob = await response.json();
+                blobUrl = newBlob.url;
+                setMessage('文件上传成功，正在提交内容...');
+            } else {
+                 setMessage('正在提交内容...');
             }
 
-            const result = await response.json();
-            
+            // 步骤 2: 将文本内容和文件URL提交到服务器
+            const submissionResponse = await fetch('/api/submit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content, fileUrl: blobUrl, userId }),
+            });
+
+            if (!submissionResponse.ok) {
+                const errorResult = await submissionResponse.json();
+                throw new Error(errorResult.message || '内容提交失败');
+            }
+
+            const result = await submissionResponse.json();
             setStatus('success');
             setMessage(result.message || '提交成功！感谢您的稿件。');
             setContent('');
@@ -208,10 +209,6 @@ function SubmissionForm() {
     
     const getFileIcon = (fileType: string) => {
         if (fileType.startsWith('image/')) return <FileImageIcon className="w-5 h-5 text-blue-500" />;
-        if (fileType.includes('pdf')) return <FileTextIcon className="w-5 h-5 text-red-500" />;
-        if (fileType.includes('word')) return <FileTextIcon className="w-5 h-5 text-blue-700" />;
-        if (fileType.includes('excel') || fileType.includes('spreadsheet')) return <FileTextIcon className="w-5 h-5 text-green-700" />;
-        if (fileType.includes('powerpoint') || fileType.includes('presentation')) return <FileTextIcon className="w-5 h-5 text-orange-500" />;
         return <FileTextIcon className="w-5 h-5 text-gray-500" />;
     };
 
@@ -264,7 +261,8 @@ function SubmissionForm() {
                                 className="mt-3 flex items-center justify-center gap-2 w-full bg-gray-100 hover:bg-gray-200 text-slate-700 font-semibold py-2 px-4 rounded-lg transition-colors"
                             >
                                 <UploadIcon className="w-5 h-5"/>
-                                上传文件 (最大3MB)
+                                {/* ** 修改点: 更新按钮文本 ** */}
+                                上传文件 (最大10MB)
                             </button>
                         )}
                          <input
@@ -285,14 +283,15 @@ function SubmissionForm() {
                     </div>
                 </div>
                 <div className="p-4 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-                    {status !== 'idle' && (
+                     {status !== 'idle' && (
                         <p className={`text-sm ${
                             status === 'success' ? 'text-green-600' : 
                             status === 'error' ? 'text-red-600' : 'text-slate-600'
                         }`}>
-                            {message || (status === 'loading' && '正在提交...')}
+                            {message}
                         </p>
                     )}
+                    <div className="flex-grow"></div>
                     <button 
                         onClick={handleSubmit}
                         disabled={status === 'loading'}
@@ -306,8 +305,7 @@ function SubmissionForm() {
     );
 }
 
-
-// --- 核心背景动画组件 ---
+// --- 核心背景动画组件 (保持不变) ---
 function FloatingPaths({ position }: { position: number }) {
     const paths = Array.from({ length: 36 }, (_, i) => ({
         id: i,
@@ -347,7 +345,7 @@ function FloatingPaths({ position }: { position: number }) {
     );
 }
 
-// --- Apex主页组件 ---
+// --- Apex主页组件 (保持不变) ---
 function ApexHero({ title = "Apex" }: { title?: string }) {
     const words = title.split(" ");
 
@@ -388,7 +386,6 @@ function ApexHero({ title = "Apex" }: { title?: string }) {
                             </span>
                         ))}
                     </h1>
-                    {/* 在此添加投稿表单组件 */}
                     <SubmissionForm />
                 </motion.div>
             </div>
@@ -396,7 +393,8 @@ function ApexHero({ title = "Apex" }: { title?: string }) {
     );
 }
 
-// --- 页面主入口 (符合 Next.js App Router 规范) ---
+// --- 页面主入口 (保持不变) ---
 export default function Page() {
     return <ApexHero title="Apex" />;
 }
+
